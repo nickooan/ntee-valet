@@ -386,3 +386,21 @@ test("dynamic cost: per-request and async cost functions", async () => {
     })
   })
 })
+
+test("cost accepts a plain number on the middleware", async () => {
+  const limits = { api: { pool: 6, windowMs: 60_000 } }
+  await withValet({ limits }, async (valet) => {
+    const app = express()
+    app.get(
+      "/fixed",
+      rateLimit(valet, "api", { key: () => "k", cost: 3 }),
+      (req, res) => res.json({ ok: true }),
+    )
+    await withServer(app, async (base) => {
+      assert.equal((await fetch(`${base}/fixed`)).status, 200)
+      assert.equal(await valet.remaining("api", "k"), 3)
+      assert.equal((await fetch(`${base}/fixed`)).status, 200)
+      assert.equal((await fetch(`${base}/fixed`)).status, 429)
+    })
+  })
+})

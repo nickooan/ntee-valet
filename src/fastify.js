@@ -42,13 +42,15 @@ export const rateLimit = (
   const definition = valet.config.limits[name]
   if (!definition) valet.limit(name, "") // throws ERR_VALET_UNKNOWN_LIMIT with known names
   const keyFor = key ?? ((request) => request.ip ?? "anon")
+  // cost: plain number, or a per-request (possibly async) function;
+  // undefined falls through to the limit definition's cost.
+  const costFor = typeof cost === "function" ? cost : () => cost
   const matchesPath = createPathMatcher(paths, exclude)
   // A preHandler (or onRequest) hook.
   return async (request, reply) => {
     if (!matchesPath(pathnameOf(request.url))) return
     const id = keyFor(request)
-    // cost may be async (e.g. an account-tier lookup) — await covers both.
-    const { ok } = await valet.limit(name, id, await cost?.(request))
+    const { ok } = await valet.limit(name, id, await costFor(request))
     reply.header("x-ratelimit-limit", String(definition.pool))
     if (!ok) {
       // Upper bound: the fixed window's per-key deadline isn't readable.

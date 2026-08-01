@@ -44,12 +44,13 @@ export interface RateLimitOptions {
   exclude?: string[]
   /** Limiter key per request (default: request.ip). */
   key?: (request: MinimalFastifyRequest) => string
-  /** Per-request cost, sync or async (default: the limit's configured
-   * cost). Must resolve to a non-negative safe integer. The take is
-   * all-or-nothing: an overshooting cost is refused whole, nothing written.
-   * Body-based cost needs the body parsed — use the hook as preHandler
-   * (onRequest runs before body parsing). */
-  cost?: (request: MinimalFastifyRequest) => number | Promise<number>
+  /** Cost per request: a plain number, or a per-request function — sync or
+   * async (default: the limit's configured cost). Must resolve to a
+   * non-negative safe integer. The take is all-or-nothing: an overshooting
+   * cost is refused whole, nothing written. Body-based cost needs the body
+   * parsed — use the hook as preHandler (onRequest runs before body
+   * parsing). */
+  cost?: number | ((request: MinimalFastifyRequest) => number | Promise<number>)
   /** Also set x-ratelimit-remaining (costs one extra read per request). */
   remainingHeader?: boolean
   /** Custom 429 handling; default sends 429 {"error":"rate limited"}. */
