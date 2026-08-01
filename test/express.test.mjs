@@ -356,3 +356,33 @@ test("store decision: valetCache flag wins; store callback replaces default poli
     })
   })
 })
+
+test("dynamic cost: per-request and async cost functions", async () => {
+  const limits = { api: { pool: 10, windowMs: 60_000 } }
+  await withValet({ limits }, async (valet) => {
+    const app = express()
+    app.get(
+      "/work",
+      rateLimit(valet, "api", {
+        key: () => "k",
+        // Async on purpose — proves the middleware awaits the cost decider.
+        cost: async (req) => Number(req.headers["x-cost"]),
+      }),
+      (req, res) => res.json({ ok: true }),
+    )
+
+    await withServer(app, async (base) => {
+      const request = (cost) =>
+        fetch(`${base}/work`, { headers: { "x-cost": String(cost) } })
+
+      assert.equal((await request(4)).status, 200)
+      assert.equal(await valet.remaining("api", "k"), 6)
+      assert.equal((await request(6)).status, 200)
+      assert.equal(await valet.remaining("api", "k"), 0)
+
+      // Overshooting cost is refused whole — nothing written.
+      assert.equal((await request(1)).status, 429)
+      assert.equal(await valet.remaining("api", "k"), 0)
+    })
+  })
+})

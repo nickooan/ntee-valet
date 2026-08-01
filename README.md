@@ -228,10 +228,34 @@ Middleware (`rateLimit(valet, name, options)`, both frameworks):
 | Option            | Default                        | Meaning                                   |
 | ----------------- | ------------------------------ | ----------------------------------------- |
 | `key`             | `req.ip`                       | limiter key per request                   |
-| `cost`            | the limit's `cost` (1)         | per-request cost fn                       |
+| `cost`            | the limit's `cost` (1)         | per-request cost fn, sync or async        |
 | `remainingHeader` | `false`                        | also set `X-RateLimit-Remaining`          |
 | `onReject`        | 429 `{"error":"rate limited"}` | custom rejection handler                  |
 | `paths`/`exclude` | apply everywhere               | glob path scoping (see "Scoping by path") |
+
+**Dynamic cost.** `cost` is decided per request — return a number, or a
+Promise of one (the middleware awaits it):
+
+```js
+// Charge by the work requested: a bulk create of 50 items costs 50 tokens.
+app.post(
+  "/orders/bulk",
+  express.json(), // body-based cost needs the body parsed first
+  rateLimit(valet, "api", { cost: (req) => req.body.items.length }),
+  handler,
+)
+
+// Or decide asynchronously (account tier, store lookup, …):
+rateLimit(valet, "api", {
+  cost: async (req) => (await accountTier(req)).weight,
+})
+```
+
+The underlying `take` is all-or-nothing: a cost that would overshoot the
+remaining pool is refused whole and writes nothing — a bulk request never
+partially drains the budget. Fastify note: use the hook as `preHandler` when
+the cost reads `request.body` (`onRequest` runs before body parsing). The
+cost must resolve to a non-negative safe integer.
 
 Headers: `X-RateLimit-Limit` always; on 429, `Retry-After` is
 `ceil(windowMs/1000)` — an honest **upper bound**, because a fixed window is
