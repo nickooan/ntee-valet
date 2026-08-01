@@ -230,15 +230,52 @@ app.use(
     methods: ["GET"], // default
     statuses: [200], // default — errors are never cached
     headers: ["cache-control"], // extra headers to replay (content-type always kept)
-    // skip DEFAULT: Authorization-bearing requests bypass the cache, and
-    // Set-Cookie responses are never stored (see Security). Your own skip
-    // replaces the Authorization guard.
+    // skip DEFAULT: Authorization-bearing requests bypass the cache
+    // (see Security). Your own skip replaces the Authorization guard.
     skip: (req) => req.query.nocache !== undefined,
+    // store DEFAULT: defaultStorePolicy({ statuses }) — see "Deciding what
+    // to store". Your own store replaces it wholesale.
+    store: (req, res, body) => res.statusCode === 200 && body.length < 1e6,
     paths: ["/properties/**"], // only cache this namespace (see below)
     exclude: ["/properties/admin/**"],
   }),
 )
 ```
+
+### Deciding what to store
+
+The store decision is explicit and layered — the most specific wins:
+
+1. **Handler code, per response** — set `res.valetCache` (express) /
+   `reply.valetCache` (fastify): `false` blocks storing a response the policy
+   would cache; `true` forces storing one it would refuse.
+
+   ```js
+   app.get("/report", async (req, res) => {
+     const report = await buildExpensiveReport()
+     res.valetCache = report.stable // cache only when the data settled
+     res.json(report)
+   })
+   ```
+
+2. **The `store` option** — one callback deciding for the whole middleware.
+   Passing it **replaces** the default policy entirely (including the
+   `statuses` check):
+
+   ```js
+   cacheResponse(valet, {
+     store: (req, res, body) =>
+       defaultStorePolicy()(req, res) && body.length < 100_000,
+   })
+   ```
+
+3. **`defaultStorePolicy`** (exported from both adapters) — what runs when
+   you configure nothing: status in `statuses` (default `[200]`) and no
+   `Set-Cookie` header on the response.
+
+Mechanical limits apply regardless: a request-side `skip`/path miss means the
+response was never captured, cache-served hits are never re-stored, and (in
+fastify) streamed payloads can't be stored.
 
 ### Scoping by path
 
@@ -299,13 +336,16 @@ wire it:
   responses.
 - **Plain `Cookie` headers do NOT bypass** — browsers send cookies on nearly
   every request, so skipping on them would disable the cache for real sites.
-  The guard is on the response side instead: **a response carrying
-  `Set-Cookie` is never stored** (it's session-personalized), and stored
+  The guard is on the response side instead: the **default store policy**
+  refuses responses carrying `Set-Cookie` (session-personalized), and stored
   headers are allowlisted, so a cached response can never replay someone's
-  `Set-Cookie`. The remaining footgun is cookie-session APIs whose plain GET
-  responses differ per session **without** setting cookies — for those
-  routes, add `skip: (req) => req.headers.cookie !== undefined`, fold the
-  session into `key`, or exclude them via `paths`.
+  `Set-Cookie`. This is policy, not magic — replace it with the `store`
+  option or override per response with `valetCache` (see "Deciding what to
+  store"), and know that doing so takes on this risk. The remaining footgun
+  is cookie-session APIs whose plain GET responses differ per session
+  **without** setting cookies — for those routes, add
+  `skip: (req) => req.headers.cookie !== undefined`, fold the session into
+  `key`, or exclude them via `paths`.
 - **Mount order is auth-critical.** A cache hit short-circuits everything
   mounted after it. Express: mount `cacheResponse` **after** your auth
   middleware. Fastify: the cache's `onRequest` hook runs before any

@@ -354,3 +354,56 @@ test("cacheResponse defaults: Authorization bypasses; cookies participate; Set-C
     })
   })
 })
+
+test("store decision: valetCache flag wins; store callback replaces default policy", async () => {
+  await withValet({}, async (valet) => {
+    await withApp(async (app) => {
+      const cache = cacheResponse(valet)
+      app.addHook("onRequest", cache.onRequest)
+      app.addHook("onSend", cache.onSend)
+      let calls = 0
+      app.get("/never", async (request, reply) => {
+        reply.valetCache = false // explicit: don't store this 200
+        return { call: ++calls }
+      })
+      app.get("/always", async (request, reply) => {
+        reply.valetCache = true // explicit: store despite Set-Cookie
+        reply.header("set-cookie", "session=abc")
+        return { forced: true }
+      })
+
+      await app.inject({ url: "/never" })
+      const second = await app.inject({ url: "/never" })
+      assert.equal(second.headers["x-cache"], "MISS") // handler re-ran
+      assert.deepEqual(second.json(), { call: 2 })
+
+      await app.inject({ url: "/always" })
+      const forcedHit = await app.inject({ url: "/always" })
+      assert.equal(forcedHit.headers["x-cache"], "HIT")
+      assert.deepEqual(forcedHit.json(), { forced: true })
+    })
+
+    // A custom store callback fully replaces the default policy.
+    await withApp(async (app) => {
+      const cache = cacheResponse(valet, {
+        store: (request, reply) => reply.statusCode === 201,
+        key: (request) => `custom ${request.url}`,
+      })
+      app.addHook("onRequest", cache.onRequest)
+      app.addHook("onSend", cache.onSend)
+      app.get("/created", async (request, reply) =>
+        reply.code(201).send({ ok: 1 }),
+      )
+      app.get("/plain", async () => ({ ok: 2 }))
+
+      await app.inject({ url: "/created" })
+      const createdHit = await app.inject({ url: "/created" })
+      assert.equal(createdHit.headers["x-cache"], "HIT")
+      assert.equal(createdHit.statusCode, 201)
+
+      await app.inject({ url: "/plain" })
+      const plainAgain = await app.inject({ url: "/plain" })
+      assert.equal(plainAgain.headers["x-cache"], "MISS") // 200 not stored
+    })
+  })
+})

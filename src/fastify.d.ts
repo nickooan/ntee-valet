@@ -12,6 +12,10 @@ export interface MinimalFastifyRequest {
 
 export interface MinimalFastifyReply {
   statusCode: number
+  /** Per-response cache override, set by handler code: `true` forces the
+   * response to be stored, `false` blocks it — either wins over the store
+   * callback and the default policy. Leave undefined to let them decide. */
+  valetCache?: boolean
   header(name: string, value: string): this
   headers(values: Record<string, string>): this
   code(statusCode: number): this
@@ -71,11 +75,27 @@ export interface CacheResponseOptions {
   /** Return true to bypass the cache for a request (neither served nor
    * stored). DEFAULT: skips requests carrying an Authorization header
    * (RFC 9111 shared-cache rule). Cookie-carrying requests participate —
-   * but responses that SET a cookie are never stored. Passing your own skip
-   * REPLACES the Authorization guard — `skip: () => false` opts authorized
-   * requests back in (then fold identity into `key`). */
+   * but the default store policy refuses Set-Cookie responses. Passing your
+   * own skip REPLACES the Authorization guard — `skip: () => false` opts
+   * authorized requests back in (then fold identity into `key`). */
   skip?: (request: MinimalFastifyRequest) => boolean
+  /** Decides whether a completed response is stored. DEFAULT:
+   * `defaultStorePolicy({ statuses })`. Passing your own store REPLACES the
+   * default policy entirely (including the statuses check). Handler code
+   * overrides both per response via `reply.valetCache = true | false`. */
+  store?: (
+    request: MinimalFastifyRequest,
+    reply: MinimalFastifyReply,
+    payload: string | Buffer,
+  ) => boolean
 }
+
+/** The default store decision: cacheable status (default [200]) and no
+ * Set-Cookie header. Exported for composition with a custom `store`:
+ * `store: (request, reply, payload) => defaultStorePolicy()(request, reply) && ...` */
+export declare const defaultStorePolicy: (options?: {
+  statuses?: number[]
+}) => (request: MinimalFastifyRequest, reply: MinimalFastifyReply) => boolean
 
 /** fp-wrapped plugin decorating app.valet and request.valet on the ROOT
  * instance (fastify-plugin breaks register() encapsulation). Register with

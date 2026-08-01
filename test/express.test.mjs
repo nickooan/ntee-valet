@@ -308,3 +308,51 @@ test("cacheResponse defaults: Authorization bypasses; cookies participate; Set-C
     })
   })
 })
+
+test("store decision: valetCache flag wins; store callback replaces default policy", async () => {
+  await withValet({}, async (valet) => {
+    let calls = 0
+    const app = express()
+    app.use(cacheResponse(valet))
+    app.get("/never", (req, res) => {
+      res.valetCache = false // explicit: don't store this 200
+      res.json({ call: ++calls })
+    })
+    app.get("/always", (req, res) => {
+      res.valetCache = true // explicit: store despite the default policy
+      res.status(404).json({ negative: "cached" })
+    })
+
+    await withServer(app, async (base) => {
+      await fetch(`${base}/never`)
+      const second = await fetch(`${base}/never`)
+      assert.equal(second.headers.get("x-cache"), "MISS") // handler re-ran
+      assert.deepEqual(await second.json(), { call: 2 })
+
+      assert.equal((await fetch(`${base}/always`)).status, 404)
+      const negativeHit = await fetch(`${base}/always`)
+      assert.equal(negativeHit.headers.get("x-cache"), "HIT")
+      assert.equal(negativeHit.status, 404)
+    })
+
+    // A custom store callback fully replaces the default policy.
+    const customApp = express()
+    customApp.use(
+      cacheResponse(valet, {
+        store: (req, res) => res.statusCode === 201,
+      }),
+    )
+    customApp.get("/created", (req, res) => res.status(201).json({ ok: 1 }))
+    customApp.get("/plain", (req, res) => res.json({ ok: 2 }))
+    await withServer(customApp, async (base) => {
+      await fetch(`${base}/created`)
+      const createdHit = await fetch(`${base}/created`)
+      assert.equal(createdHit.headers.get("x-cache"), "HIT")
+      assert.equal(createdHit.status, 201)
+
+      await fetch(`${base}/plain`)
+      const plainAgain = await fetch(`${base}/plain`)
+      assert.equal(plainAgain.headers.get("x-cache"), "MISS") // 200 not stored
+    })
+  })
+})

@@ -63,6 +63,17 @@ export const rateLimit = (
   }
 }
 
+// The default store decision, exported so custom `store` callbacks can
+// compose with it: cacheable status (statuses option, default [200]) and no
+// Set-Cookie header (a cookie-setting response is session-personalized —
+// storing it in a shared cache would replay one user's session artifacts to
+// others).
+export const defaultStorePolicy =
+  ({ statuses = [200] } = {}) =>
+  (request, response) =>
+    statuses.includes(response.statusCode) &&
+    response.getHeader("set-cookie") === undefined
+
 export const cacheResponse = (
   valet,
   {
@@ -76,6 +87,10 @@ export const cacheResponse = (
     // replaces this guard — opt back in deliberately. Cookie-carrying
     // requests DO participate; the store side refuses Set-Cookie responses.
     skip = (req) => hasAuthorizationHeader(req.headers),
+    // Decides whether a completed response is stored. Passing your own store
+    // REPLACES the default policy (including the statuses check). Handler
+    // code overrides both per response via `res.valetCache = true | false`.
+    store = defaultStorePolicy({ statuses }),
     paths,
     exclude,
   } = {},
@@ -106,19 +121,22 @@ export const cacheResponse = (
     res.end = (chunk, encoding, callback) => {
       if (chunk && typeof chunk !== "function")
         chunks.push(toBuffer(chunk, encoding))
-      // A Set-Cookie response is session-personalized — storing it in a
-      // shared cache would replay one user's session artifacts to others.
-      if (
-        statuses.includes(res.statusCode) &&
-        res.getHeader("set-cookie") === undefined
-      )
+      const body = Buffer.concat(chunks)
+      // Handler code has the last word (res.valetCache); otherwise the store
+      // callback decides (default: defaultStorePolicy).
+      const explicitDecision = res.valetCache
+      const shouldStore =
+        explicitDecision !== undefined
+          ? explicitDecision
+          : store(req, res, body)
+      if (shouldStore)
         // db.put is synchronous — safe to store without awaiting.
         valet.responseCache.set(
           cacheKey,
           {
             status: res.statusCode,
             headers: pickHeaders((name) => res.getHeader(name), headers),
-            body: Buffer.concat(chunks),
+            body,
           },
           ttlMs,
         )

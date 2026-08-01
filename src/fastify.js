@@ -63,6 +63,17 @@ export const rateLimit = (
   }
 }
 
+// The default store decision, exported so custom `store` callbacks can
+// compose with it: cacheable status (statuses option, default [200]) and no
+// Set-Cookie header (a cookie-setting response is session-personalized —
+// storing it in a shared cache would replay one user's session artifacts to
+// others).
+export const defaultStorePolicy =
+  ({ statuses = [200] } = {}) =>
+  (request, reply) =>
+    statuses.includes(reply.statusCode) &&
+    reply.getHeader("set-cookie") === undefined
+
 export const cacheResponse = (
   valet,
   {
@@ -76,6 +87,10 @@ export const cacheResponse = (
     // replaces this guard — opt back in deliberately. Cookie-carrying
     // requests DO participate; the store side refuses Set-Cookie responses.
     skip = (request) => hasAuthorizationHeader(request.headers),
+    // Decides whether a completed response is stored. Passing your own store
+    // REPLACES the default policy (including the statuses check). Handler
+    // code overrides both per response via `reply.valetCache = true | false`.
+    store = defaultStorePolicy({ statuses }),
     paths,
     exclude,
   } = {},
@@ -97,15 +112,22 @@ export const cacheResponse = (
     reply.header("x-cache", "MISS")
   }
   const onSend = async (request, reply, payload) => {
-    const cacheable =
+    // Mechanical gates first (capability, not policy): a cache-served hit is
+    // never re-stored, out-of-scope requests were never candidates, and only
+    // string/Buffer payloads can be replayed (streams skipped). Then handler
+    // code has the last word (reply.valetCache); otherwise the store
+    // callback decides (default: defaultStorePolicy).
+    const storable =
       !request[servedFromCache] &&
       applies(request) &&
-      statuses.includes(reply.statusCode) &&
-      // A Set-Cookie response is session-personalized — storing it in a
-      // shared cache would replay one user's session artifacts to others.
-      reply.getHeader("set-cookie") === undefined &&
-      (typeof payload === "string" || Buffer.isBuffer(payload)) // streams skipped
-    if (cacheable)
+      (typeof payload === "string" || Buffer.isBuffer(payload))
+    const explicitDecision = reply.valetCache
+    const shouldStore =
+      storable &&
+      (explicitDecision !== undefined
+        ? explicitDecision
+        : store(request, reply, payload))
+    if (shouldStore)
       // db.put is synchronous — safe to store without awaiting.
       valet.responseCache.set(
         key(request),
