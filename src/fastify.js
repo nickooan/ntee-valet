@@ -47,7 +47,8 @@ export const rateLimit = (
   return async (request, reply) => {
     if (!matchesPath(pathnameOf(request.url))) return
     const id = keyFor(request)
-    const { ok } = await valet.limit(name, id, cost?.(request))
+    // cost may be async (e.g. an account-tier lookup) — await covers both.
+    const { ok } = await valet.limit(name, id, await cost?.(request))
     reply.header("x-ratelimit-limit", String(definition.pool))
     if (!ok) {
       // Upper bound: the fixed window's per-key deadline isn't readable.

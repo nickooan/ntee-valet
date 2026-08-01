@@ -1,6 +1,6 @@
 {
   "name": "ntee-valet",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "API-server companion for ntee-db — schema-defined caching, cache search, take-based rate limiting, and HTTP response caching, with Express and Fastify adapters",
   "license": "Apache-2.0",
   "author": "nickooan <nickooan@gmail.com>",

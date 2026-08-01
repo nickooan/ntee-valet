@@ -407,3 +407,37 @@ test("store decision: valetCache flag wins; store callback replaces default poli
     })
   })
 })
+
+test("dynamic cost: async cost from the parsed request body (preHandler stage)", async () => {
+  const limits = { api: { pool: 10, windowMs: 60_000 } }
+  await withValet({ limits }, async (valet) => {
+    await withApp(async (app) => {
+      app.post(
+        "/bulk",
+        {
+          // preHandler runs after body parsing, so body-based cost works.
+          preHandler: rateLimit(valet, "api", {
+            key: () => "k",
+            cost: async (request) => request.body.items.length,
+          }),
+        },
+        async (request) => ({ created: request.body.items.length }),
+      )
+      const bulk = (count) =>
+        app.inject({
+          method: "POST",
+          url: "/bulk",
+          payload: { items: Array.from({ length: count }, (_, i) => i) },
+        })
+
+      assert.equal((await bulk(4)).statusCode, 200)
+      assert.equal(await valet.remaining("api", "k"), 6)
+      assert.equal((await bulk(6)).statusCode, 200)
+      assert.equal(await valet.remaining("api", "k"), 0)
+
+      // Overshooting cost is refused whole — nothing written.
+      assert.equal((await bulk(1)).statusCode, 429)
+      assert.equal(await valet.remaining("api", "k"), 0)
+    })
+  })
+})
