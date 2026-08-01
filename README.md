@@ -3,7 +3,9 @@
 API-server companion for [ntee-db](https://github.com/nickooan/ntee-db) — an
 embedded, in-process valet that caches your content, searches it, limits your
 callers, and caches your responses. One store, zero external services, with
-first-class middleware for **Express 5** and **Fastify 5**:
+first-class middleware for **Express 5** and **Fastify 5**. Values live on
+disk; only keys and indexes are held in RAM — caching megabytes of content
+does not cost megabytes of process memory:
 
 ```js
 import { createValet } from "ntee-valet"
@@ -11,13 +13,29 @@ import { createValet } from "ntee-valet"
 const valet = createValet({
   dir: "./data",
   spaces: {
-    order: { ttlMs: 300_000, indexes: [{ name: "customer", kind: "string" }] },
+    order: {
+      ttlMs: 300_000,
+      indexes: [
+        // Index values derive from the record via jsonPath on every write:
+        { name: "customer", kind: "string", jsonPath: "customer" },
+        { name: "city", kind: "string", jsonPath: "shipping.address.city" },
+        // jsonPath is optional — omitted, it defaults to the index name:
+        { name: "status", kind: "number" }, // same as jsonPath: "status"
+      ],
+    },
   },
   limits: { api: { pool: 1000, windowMs: 60_000 } },
 })
 
-valet.spaces.order.set("o1", { total: 42, customer: "acme" }) // index derives
+valet.spaces.order.set("o1", {
+  total: 42,
+  status: 200,
+  customer: "acme",
+  shipping: { address: { city: "berlin" } },
+})
+
 await valet.spaces.order.findRecords("customer", "acme") // → [{ key: "o1", ... }]
+await valet.spaces.order.find("city", "berlin") // → ["o1"] (nested jsonPath)
 await valet.limit("api", clientId) // → { ok: true | false }
 ```
 
@@ -376,6 +394,15 @@ wire it:
 
 ## Notes & constraints
 
+- **Memory model — values on disk, keys in RAM**: every record value
+  (cached content, response bodies, blobs) lives in the append-only log on
+  disk and is read from disk per get (the OS page cache makes hot reads
+  cheap). What stays in process memory is the sorted key index and the
+  secondary-index entries — so RAM cost scales with the **number of keys**,
+  not the bytes cached: hundreds of MB of cached bodies cost only their
+  keys' worth of RAM. The corollary: high key **cardinality** is what costs
+  memory (see the cache-flooding note in Security), and boot does an O(n)
+  key scan (~100 ms at 100k keys).
 - **Single-writer**: one process per store directory (enforced by `flock`;
   a second open fails fast). For multi-process or multi-host sharing, run
   `nteedb-server` and use `ntee-db-client` instead of this package.
