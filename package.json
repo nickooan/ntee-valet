@@ -1,0 +1,79 @@
+{
+  "name": "ntee-valet",
+  "version": "0.1.0",
+  "description": "API-server companion for ntee-db — schema-defined caching, cache search, take-based rate limiting, and HTTP response caching, with Express and Fastify adapters",
+  "license": "Apache-2.0",
+  "author": "nickooan <nickooan@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nickooan/ntee-valet.git"
+  },
+  "homepage": "https://github.com/nickooan/ntee-valet#readme",
+  "bugs": {
+    "url": "https://github.com/nickooan/ntee-valet/issues"
+  },
+  "keywords": [
+    "cache",
+    "rate-limit",
+    "rate-limiter",
+    "response-cache",
+    "middleware",
+    "express",
+    "fastify",
+    "nteedb",
+    "ntee-db",
+    "key-value",
+    "secondary-index",
+    "ttl",
+    "embedded"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./express": {
+      "types": "./src/express.d.ts",
+      "default": "./src/express.js"
+    },
+    "./fastify": {
+      "types": "./src/fastify.d.ts",
+      "default": "./src/fastify.js"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ntee-db": "^0.4.1",
+    "fastify-plugin": "^5.1.0"
+  },
+  "peerDependencies": {
+    "express": "^5.0.0",
+    "fastify": "^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    },
+    "fastify": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "express": "^5.2.1",
+    "fastify": "^5.11.0",
+    "prettier": "^3.8.3"
+  }
+}

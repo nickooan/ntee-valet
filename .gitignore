@@ -1,0 +1,4 @@
+node_modules/
+
+# local store scratch dirs (smoke scripts, experiments)
+scratch/
