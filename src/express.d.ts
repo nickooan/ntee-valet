@@ -41,11 +41,12 @@ export interface RateLimitOptions {
   exclude?: string[]
   /** Limiter key per request (default: req.ip). */
   key?: (req: MinimalRequest) => string
-  /** Per-request cost, sync or async (default: the limit's configured
-   * cost). Must resolve to a non-negative safe integer. The take is
-   * all-or-nothing: an overshooting cost is refused whole, nothing written.
-   * Body-based cost needs the body parsed — mount after express.json(). */
-  cost?: (req: MinimalRequest) => number | Promise<number>
+  /** Cost per request: a plain number, or a per-request function — sync or
+   * async (default: the limit's configured cost). Must resolve to a
+   * non-negative safe integer. The take is all-or-nothing: an overshooting
+   * cost is refused whole, nothing written. Body-based cost needs the body
+   * parsed — mount after express.json(). */
+  cost?: number | ((req: MinimalRequest) => number | Promise<number>)
   /** Also set X-RateLimit-Remaining (costs one extra read per request). */
   remainingHeader?: boolean
   /** Custom 429 handling; default sends 429 {"error":"rate limited"}. */

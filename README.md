@@ -228,13 +228,15 @@ Middleware (`rateLimit(valet, name, options)`, both frameworks):
 | Option            | Default                        | Meaning                                   |
 | ----------------- | ------------------------------ | ----------------------------------------- |
 | `key`             | `req.ip`                       | limiter key per request                   |
-| `cost`            | the limit's `cost` (1)         | per-request cost fn, sync or async        |
+| `cost`            | the limit's `cost` (1)         | number, or per-request fn (sync or async) |
 | `remainingHeader` | `false`                        | also set `X-RateLimit-Remaining`          |
 | `onReject`        | 429 `{"error":"rate limited"}` | custom rejection handler                  |
 | `paths`/`exclude` | apply everywhere               | glob path scoping (see "Scoping by path") |
 
-**Dynamic cost.** `cost` is decided per request — return a number, or a
-Promise of one (the middleware awaits it):
+**Dynamic cost.** `cost` can be a plain number
+(`rateLimit(valet, "api", { cost: 5 })` — every matching request takes 5
+tokens), or a per-request function returning a number or a Promise of one
+(the middleware awaits it):
 
 ```js
 // Charge by the work requested: a bulk create of 50 items costs 50 tokens.
